@@ -143,10 +143,10 @@ class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("bg", "./assets/witch_room.png");
+    this.load.image("bg", "/assets/witch_room.png");
 
     for (let i = 1; i <= 7; i++) {
-      this.load.image(`cauldron${i}`, `./assets/cauldron${i}.png`);
+      this.load.image(`cauldron${i}`, `/assets/cauldron${i}.png`);
     }
   }
 
