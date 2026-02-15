@@ -148,7 +148,7 @@ preload() {
   this.load.image("bg", asset("../assets/witch_room.png"));
 
   for (let i = 1; i <= 7; i++) {
-    this.load.image(`cauldron${i}`, asset(`../assets/cauldron${i}.png`));
+    this.load.image(`cauldron${i}`, asset(`../assets/cauldron${i}.PNG`));
   }
 }
 
