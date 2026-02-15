@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Witch Hands</title>
+ <style>
+  body {
+    margin: 0;
+    background: #111;
+    overflow: hidden;
+  }
+
+  /* Phaser canvas full screen */
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 10;
+    outline: 2px solid rgba(255,255,255,0.15);
+  }
+
+  /* Webcam PiP (we will position it via JS to match the canvas) */
+  #cam {
+    position: fixed;
+    z-index: 20;
+    width: 240px;     /* temporary; JS will override */
+    height: 135px;    /* temporary; JS will override */
+    object-fit: cover;
+    border-radius: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+    transform: scaleX(-1); /* selfie mirror */
+    opacity: 0.95;
+    pointer-events: none;
+  }
+</style>
+
+
+  <!-- <script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.js"></script> -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+
+</head>
+<body>
+  <video id="cam" autoplay playsinline muted></video>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
