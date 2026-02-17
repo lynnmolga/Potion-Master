@@ -192,7 +192,7 @@ class MainScene extends Phaser.Scene {
 
       // middle shelf (3)
       [0.3, 0.345, 0.85],
-      [0.5, 0.38, 1.2],
+      [0.5, 0.375, 1.2],
       [0.7, 0.355, 0.9],
     ];
 
