@@ -1,6 +1,6 @@
 # Potion Master (Work in Progress)
 
-An interactive hand-tracking potion game built with Phaser 3 and MediaPipe.
+An interactive hand-tracking potion game built with MediaPipe.
 
 #### ⚠️ This project is currently under active development.
 -----------
