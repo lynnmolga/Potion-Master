@@ -168,7 +168,7 @@ class MainScene extends Phaser.Scene {
     const asset = (p) => new URL(p, import.meta.url).toString();
 
     this.load.image("bg", asset("../assets/witch_room.png"));
-    this.load.image("pink_glasses", asset("../assets/potions/filters/pink_glasses.png"));
+    this.load.image("pink_glasses", asset("../assets/filters/pink_glasses.png"));
     // Cauldron frames
     for (let i = 1; i <= 7; i++) {
       this.load.image(`cauldron${i}`, asset(`../assets/cauldron${i}.png`));
@@ -265,8 +265,10 @@ class MainScene extends Phaser.Scene {
       pink_glasses: {
         texture: "pink_glasses",
         type: "eyes",       // future: "head", "mouth", etc.
-        scaleMultiplier: 2.2,
-        yOffsetFactor: 0.0
+        scaleMultiplier: 3.5,
+        yOffsetFactor: -0.2,
+        xOffsetFactor: 0.05,
+        elementId: "filter-overlay" 
       }
     };
 
@@ -287,6 +289,11 @@ class MainScene extends Phaser.Scene {
       //LATER CHANGE TO COMBOS match: (history) => history.includes("pink") && history.includes("blue") 
       apply: "pink_glasses"
     }
+  //   this.COMBOS = [
+  // {
+  //   match: (history) => history.includes("pink") && history.includes("blue"),
+  //   apply: "pink_glasses"
+  // },
   ];
 
 
@@ -303,18 +310,20 @@ class MainScene extends Phaser.Scene {
   }
 
   setActiveFilter(filterKey) {
-    // Hide all filters
-    Object.values(this.filterSprites).forEach(sprite => {
-      sprite.setVisible(false);
-    });
+      // This hides the giant "ghost" sprites inside the Phaser game
+      Object.values(this.filterSprites).forEach(sprite => {
+          sprite.setVisible(false);
+      });
 
-    if (!filterKey) {
-      this.activeFilter = null;
-      return;
-    }
+      if (!filterKey) {
+          this.activeFilter = null;
+          // Also hide the HTML overlay if we are clearing the filter
+          const overlayEl = document.getElementById("filter-overlay");
+          if (overlayEl) overlayEl.style.display = "none";
+          return;
+      }
 
-    this.activeFilter = filterKey;
-    this.filterSprites[filterKey].setVisible(true);
+      this.activeFilter = filterKey;
   }
 
 
@@ -487,42 +496,52 @@ class MainScene extends Phaser.Scene {
         this.releaseGrace = 0;
       }
     }
-  // Inside update() where you handle the face filter:
-  if (this.activeFilter && faceState.hasFace && faceState.landmarks) {
-      const filterData = this.FILTERS[this.activeFilter];
-      const sprite = this.filterSprites[this.activeFilter];
-      const L = faceState.landmarks;
+    // Filters
+    if (this.activeFilter && faceState.hasFace && faceState.landmarks) {
+        const filterData = this.FILTERS[this.activeFilter];
+        const overlayEl = document.getElementById("filter-overlay");
+        const videoEl = document.getElementById("cam");
 
-      // 1. Get the video element's position and size on screen
-      const videoEl = document.getElementById("cam");
-      const rect = videoEl.getBoundingClientRect();
+        if (!overlayEl || !videoEl) return;
 
-      // 2. Map MediaPipe (0-1) to the VIDEO'S pixels
-      // We use (1 - x) because your video is mirrored via CSS scaleX(-1)
-      const vLx = (1 - L[33].x) * rect.width;
-      const vLy = L[33].y * rect.height;
-      const vRx = (1 - L[263].x) * rect.width;
-      const vRy = L[263].y * rect.height;
+        // Get the exact box where your face is on the screen
+        const rect = videoEl.getBoundingClientRect();
+        const L = faceState.landmarks;
 
-      // 3. Convert those video pixels to PHASER canvas pixels
-      // This aligns the sprite exactly over the PiP window
-      const spriteX = rect.left + (vLx + vRx) / 2;
-      const spriteY = rect.top + (vLy + vRy) / 2;
+        // 1. Calculate eye positions relative to the VIDEO BOX (0 to 1)
+        // We use (1 - x) because of the CSS mirroring
+        const vLx = (1 - L[33].x) * rect.width;
+        const vLy = L[33].y * rect.height;
+        const vRx = (1 - L[263].x) * rect.width;
+        const vRy = L[263].y * rect.height;
 
-      sprite.setPosition(spriteX, spriteY);
+        // 2. Add the video's screen offset (rect.left/top) 
+        // This moves the glasses from the "witch room" to the "PiP window"
+        const screenX = rect.left + (vLx + vRx) / 2;
+        const screenY = rect.top + (vLy + vRy) / 2;
 
-      // Scaling: Adjust scale based on the small video box width
-      const dx = vRx - vLx;
-      const dy = vRy - vLy;
-      const eyeDist = Math.hypot(dx, dy);
-      
-      // Rotation Fix: Subtract Math.PI (180 degrees) if it's upside down
-      const angle = Math.atan2(dy, dx) - Math.PI; 
+        const dx = vRx - vLx;
+        const dy = vRy - vLy;
+        const eyeDist = Math.hypot(dx, dy);
+        const yOffset = eyeDist * (filterData.yOffsetFactor || 0);
+        const xOffset = eyeDist * (filterData.xOffsetFactor || 0);
+        const finalScreenY = rect.top + (vLy + vRy) / 2 + yOffset;
+        const finalScreenX = rect.left + (vLx + vRx) / 2 + xOffset;
+        // 3. Scale and Rotate
+        const angle = (Math.atan2(dy, dx) - Math.PI) * (180 / Math.PI); 
+        const targetWidth = eyeDist * filterData.scaleMultiplier;
 
-      sprite.setScale((eyeDist * filterData.scaleMultiplier) / sprite.width);
-      sprite.setRotation(angle);
-      sprite.setVisible(true);
-  }
+        overlayEl.style.display = "block";
+        overlayEl.style.width = `${targetWidth}px`;
+        
+        // Use transform to center the image on the eyes
+        overlayEl.style.transform = `translate(${finalScreenX}px, ${finalScreenY}px) translate(-50%, -50%) rotate(${angle}deg)`;
+        overlayEl.style.transformOrigin = "center";
+
+    } else {
+        const overlayEl = document.getElementById("filter-overlay");
+        if (overlayEl) overlayEl.style.display = "none";
+    }
   }
 }
 
