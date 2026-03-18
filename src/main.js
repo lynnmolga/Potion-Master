@@ -168,7 +168,7 @@ class MainScene extends Phaser.Scene {
     const asset = (p) => new URL(p, import.meta.url).toString();
 
     this.load.image("bg", asset("../assets/witch_room.png"));
-    this.load.image("pink_glasses", asset("../assets/potions/filters/pink_glasses.png"));
+    this.load.image("pink_glasses", asset("../assets/filters/pink_glasses.png"));
     // Cauldron frames
     for (let i = 1; i <= 7; i++) {
       this.load.image(`cauldron${i}`, asset(`../assets/cauldron${i}.png`));
