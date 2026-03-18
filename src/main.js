@@ -2,12 +2,11 @@ console.log("main.js loaded");
 
 
 import { FilesetResolver, HandLandmarker, FaceLandmarker }
-from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18";
+  from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18";
 
 // Portrait game (matches your background exactly: 2:3)
 const W = 800;
 const H = 1200;
-
 
 // ---------- Hand tracking state (shared with Phaser) ----------
 const handState = {
@@ -20,6 +19,13 @@ const handState = {
   smoothY: H / 2,
 };
 
+const faceState = {
+  ready: false,
+  hasFace: false,
+  landmarks: null, // array of 468 landmarks
+};
+
+
 // Pinch stability counters
 let pinchOnFrames = 0;
 let pinchOffFrames = 0;
@@ -28,7 +34,6 @@ let pinchOffFrames = 0;
 async function setupHandTracking() {
   const video = document.getElementById("cam");
 
-  // Ask for webcam
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: "user" },
     audio: false,
@@ -40,7 +45,7 @@ async function setupHandTracking() {
     "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm"
   );
 
-  const landmarker = await HandLandmarker.createFromOptions(fileset, {
+  const handLandmarker = await HandLandmarker.createFromOptions(fileset, {
     baseOptions: {
       modelAssetPath:
         "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
@@ -49,7 +54,19 @@ async function setupHandTracking() {
     numHands: 1,
   });
 
+  const faceLandmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath:
+        "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+    },
+    runningMode: "VIDEO",
+    numFaces: 1,
+    outputFaceBlendshapes: false,
+    outputFacialTransformationMatrixes: false,
+  });
+
   handState.ready = true;
+  faceState.ready = true;
 
   let lastTime = -1;
 
@@ -58,35 +75,30 @@ async function setupHandTracking() {
     if (video.readyState >= 2 && now !== lastTime) {
       lastTime = now;
 
-      const res = landmarker.detectForVideo(video, now);
+      // ---- HAND ----
+      const handRes = handLandmarker.detectForVideo(video, now);
 
-      if (res.landmarks && res.landmarks.length > 0) {
+      if (handRes.landmarks && handRes.landmarks.length > 0) {
         handState.hasHand = true;
-        const lm = res.landmarks[0];
+        const lm = handRes.landmarks[0];
 
-        // Index fingertip = landmark 8, thumb tip = landmark 4
         const indexTip = lm[8];
         const thumbTip = lm[4];
 
-        // Convert normalized [0..1] -> game coords (mirror X for selfie feel)
         const targetX = (1 - indexTip.x) * W;
         const targetY = indexTip.y * H;
 
-        // smoothing factor (0.15–0.3 feels good)
         const SMOOTH = 0.2;
-
         handState.smoothX += (targetX - handState.smoothX) * SMOOTH;
         handState.smoothY += (targetY - handState.smoothY) * SMOOTH;
 
         handState.cursorX = handState.smoothX;
         handState.cursorY = handState.smoothY;
 
-        // --- Pinch detection (normalized by hand size + debounced ON/OFF) ---
         const dx = indexTip.x - thumbTip.x;
         const dy = indexTip.y - thumbTip.y;
         const dist = Math.hypot(dx, dy);
 
-        // Hand size proxy (wrist -> middle MCP) to normalize distances
         const wrist = lm[0];
         const midMcp = lm[9];
         const handSize = Math.max(
@@ -96,9 +108,8 @@ async function setupHandTracking() {
 
         const pinchRatio = dist / handSize;
 
-        // Thresholds for pinchRatio (tune if needed)
-        const PINCH_ON = 0.40;   // lower => stricter pinch
-        const PINCH_OFF = 0.55;  // higher => more forgiving hold
+        const PINCH_ON = 0.40;
+        const PINCH_OFF = 0.55;
 
         if (pinchRatio < PINCH_ON) {
           pinchOnFrames++;
@@ -107,7 +118,6 @@ async function setupHandTracking() {
           pinchOffFrames++;
           pinchOnFrames = 0;
         } else {
-          // In hysteresis band: keep state, reset counters
           pinchOnFrames = 0;
           pinchOffFrames = 0;
         }
@@ -127,6 +137,16 @@ async function setupHandTracking() {
         pinchOnFrames = 0;
         pinchOffFrames = 0;
       }
+
+      // ---- FACE ----
+      const faceRes = faceLandmarker.detectForVideo(video, now);
+      if (faceRes.faceLandmarks && faceRes.faceLandmarks.length > 0) {
+        faceState.hasFace = true;
+        faceState.landmarks = faceRes.faceLandmarks[0];
+      } else {
+        faceState.hasFace = false;
+        faceState.landmarks = null;
+      }
     }
 
     requestAnimationFrame(tick);
@@ -134,6 +154,7 @@ async function setupHandTracking() {
 
   tick();
 }
+
 
 // ---------- Phaser game ----------
 class MainScene extends Phaser.Scene {
@@ -144,10 +165,26 @@ class MainScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("bg", "../assets/witch_room.png");
+    const asset = (p) => new URL(p, import.meta.url).toString();
 
+    this.load.image("bg", asset("../assets/witch_room.png"));
+    this.load.image("pink_glasses", asset("../assets/potions/filters/pink_glasses.png"));
+    // Cauldron frames
     for (let i = 1; i <= 7; i++) {
-      this.load.image(`cauldron${i}`, `../assets/cauldron${i}.png`);
+      this.load.image(`cauldron${i}`, asset(`../assets/cauldron${i}.png`));
+    }
+
+    const colors = ["cyan", "purple", "pink", "yellow", "blue", "green", "red"];
+    const states = [
+      "standing",
+      "tip1", "tip2", "tip3",
+      "spill1", "spill2", "spill3", "spill4",
+    ];
+
+    for (const c of colors) {
+      for (const s of states) {
+        this.load.image(`${c}_${s}`, asset(`../assets/potions/${c}_${s}.png`));
+      }
     }
   }
 
@@ -169,32 +206,117 @@ class MainScene extends Phaser.Scene {
 
     this.cauldron.isAnimating = false;
 
-    // Bottle
-    this.bottleHomeX = 0.20 * W;
-    this.bottleHomeY = this.TABLE_Y - 10;
+    // Shelf slots tuned for your background
+    this.SHELF_SLOTS = [
+      // top shelf (4)
+      [0.2, 0.24, 0.73],
+      [0.4, 0.285, 1.1],
+      [0.6, 0.26, 1],
+      [0.8, 0.25, 0.9],
 
-    this.bottle = this.add.rectangle(this.bottleHomeX, this.bottleHomeY, 50, 90, 0xff6aa2)
-      .setStrokeStyle(3, 0xffc1da);
+      // middle shelf (3)
+      [0.3, 0.345, 0.85],
+      [0.5, 0.375, 1.2],
+      [0.7, 0.355, 0.9],
+    ];
 
-    this.bottle.setData("name", "pink");
+    const colors = ["cyan", "purple", "pink", "blue", "green", "yellow", "red"];
+    const TARGET_H = 180; // tweak this to make potions bigger/smaller overall
+
+    this.potions = [];
+
+    colors.forEach((color, i) => {
+      const [xN, yN, scaleMul] = this.SHELF_SLOTS[i];
+
+      const potion = this.add.image(xN * W, yN * H, `${color}_standing`);
+
+      potion.color = color;
+
+      // scale by target height + shelf multiplier
+      potion.setScale((TARGET_H / potion.height) * scaleMul);
+
+      // anchor to bottom so it sits on the plank
+      potion.setOrigin(0.5, 1);
+
+      // home for returning
+      potion.homeX = potion.x;
+      potion.homeY = potion.y;
+
+      potion.homeDepth = 5;
+      potion.setDepth(potion.homeDepth);
+
+      potion.isAnimating = false;
+
+      this.potions.push(potion);
+    });
 
     // Cursor
     this.cursor = this.add.circle(W / 2, H / 2, 10, 0xffffff).setAlpha(0.9);
     this.cursorRing = this.add.circle(W / 2, H / 2, 18)
       .setStrokeStyle(2, 0xffffff)
       .setAlpha(0.6);
+    this.cursor.setDepth(1000);
+    this.cursorRing.setDepth(1000);
+    // ---------------- FILTER SYSTEM ----------------
+    this.activeFilter = null;
+    this.potionHistory = [];
+
+    this.FILTERS = {
+      pink_glasses: {
+        texture: "pink_glasses",
+        type: "eyes",       // future: "head", "mouth", etc.
+        scaleMultiplier: 2.2,
+        yOffsetFactor: 0.0
+      }
+    };
+
+    // Create filter sprites (hidden initially)
+    this.filterSprites = {};
+
+    Object.entries(this.FILTERS).forEach(([key, data]) => {
+      const sprite = this.add.image(W / 2, H / 2, data.texture)
+        .setOrigin(0.5)
+        .setVisible(false)
+        .setDepth(2000);
+
+      this.filterSprites[key] = sprite;
+    });
+    this.COMBOS = [
+    {
+      match: () => true,  // ANY potion triggers
+      //LATER CHANGE TO COMBOS match: (history) => history.includes("pink") && history.includes("blue") 
+      apply: "pink_glasses"
+    }
+  ];
+
 
     // UI
-    this.statusText = this.add.text(16, 14, "Loading hand tracking...", {
-      color: "#f5e9ff",
-      fontSize: "16px",
+    // this.statusText = this.add.text(16, 14, "Loading hand tracking...", {
+    //   color: "#f5e9ff",
+    //   fontSize: "16px",
+    // });
+
+    // this.pourText = this.add.text(16, 40, "", {
+    //   color: "#ffd6ea",
+    //   fontSize: "16px",
+    // });
+  }
+
+  setActiveFilter(filterKey) {
+    // Hide all filters
+    Object.values(this.filterSprites).forEach(sprite => {
+      sprite.setVisible(false);
     });
 
-    this.pourText = this.add.text(16, 40, "", {
-      color: "#ffd6ea",
-      fontSize: "16px",
-    });
+    if (!filterKey) {
+      this.activeFilter = null;
+      return;
+    }
+
+    this.activeFilter = filterKey;
+    this.filterSprites[filterKey].setVisible(true);
   }
+
 
   playCauldronAnim() {
     if (!this.cauldron || this.cauldron.isAnimating) return;
@@ -220,20 +342,63 @@ class MainScene extends Phaser.Scene {
     step();
   }
 
-  update() {
-    // Status
-    if (!handState.ready) {
-      this.statusText.setText("Loading hand tracking...");
-      return;
-    }
-    if (!handState.hasHand) {
-      this.statusText.setText("Show one hand to the camera ✋");
-      return;
-    }
+  playPotionSequence(potion) {
+    if (!potion || potion.isAnimating) return;
 
-    this.statusText.setText(handState.pinching ? "PINCH ✅" : "Pinch to grab");
-    this.cursor.setFillStyle(handState.pinching ? 0xff8ad8 : 0xffffff);
-    this.cursorRing.setStrokeStyle(2, handState.pinching ? 0xff8ad8 : 0xffffff);
+    potion.isAnimating = true;
+
+    const frames = [
+      "standing",
+      "tip1", "tip2", "tip3",
+      "spill1", "spill2", "spill3", "spill4",
+    ];
+
+    let index = 0;
+
+    // cauldron in front while spilling (we keep potion behind it)
+    this.cauldron.setDepth(50);
+    potion.setDepth(40);
+
+    const step = () => {
+      potion.setTexture(`${potion.color}_${frames[index]}`);
+      index += 1;
+
+      if (index < frames.length) {
+        this.time.delayedCall(150, step);
+      } else {
+        this.time.delayedCall(200, () => {
+          potion.setTexture(`${potion.color}_standing`);
+          potion.x = potion.homeX;
+          potion.y = potion.homeY;
+
+          potion.setDepth(potion.homeDepth);
+          this.cauldron.setDepth(0);
+
+
+          potion.isAnimating = false;
+
+          this.playCauldronAnim();
+        });
+      }
+    };
+
+    step();
+  }
+
+  update() {
+    // // Status
+    // if (!handState.ready) {
+    //   this.statusText.setText("Loading hand tracking...");
+    //   return;
+    // }
+    // if (!handState.hasHand) {
+    //   this.statusText.setText("Show one hand to the camera");
+    //   return;
+    // }
+
+    // this.statusText.setText(handState.pinching ? "PINCH" : "Pinch to grab");
+    // this.cursor.setFillStyle(handState.pinching ? 0xff8ad8 : 0xffffff);
+    // this.cursorRing.setStrokeStyle(2, handState.pinching ? 0xff8ad8 : 0xffffff);
 
     // Smooth cursor visuals
     this.cursor.x += (handState.cursorX - this.cursor.x) * 0.4;
@@ -241,27 +406,44 @@ class MainScene extends Phaser.Scene {
     this.cursorRing.x += (handState.cursorX - this.cursorRing.x) * 0.2;
     this.cursorRing.y += (handState.cursorY - this.cursorRing.y) * 0.2;
 
-    // If holding bottle, follow cursor
+    // If holding potion, follow cursor
     if (this.held) {
       this.held.x = handState.cursorX;
       this.held.y = handState.cursorY;
     }
 
-    const overBottle = Phaser.Geom.Rectangle.Contains(
-      this.bottle.getBounds(),
-      handState.cursorX,
-      handState.cursorY
-    );
+    // Detect potion hover
+    let hoveredPotion = null;
+    for (const p of this.potions) {
+      if (p.isAnimating) continue;
 
-    this.bottle.setStrokeStyle(3, overBottle ? 0xffffff : 0xffc1da);
-
-    // Start hold
-    if (!this.held && handState.pinching && overBottle) {
-      this.held = this.bottle;
-      this.releaseGrace = 0;
+      if (
+        Phaser.Geom.Rectangle.Contains(
+          p.getBounds(),
+          handState.cursorX,
+          handState.cursorY
+        )
+      ) {
+        hoveredPotion = p;
+        break;
+      }
     }
 
-    // Release hold
+    // Grab
+    if (!this.held && handState.pinching && hoveredPotion) {
+      this.setActiveFilter(null);
+      this.held = hoveredPotion;
+      this.releaseGrace = 0;
+      this.held.setDepth(100);
+        // Put it above ALL potions while dragging
+      this.held.setDepth(500);
+
+      // Also force display-list ordering (beats “render order” ties)
+      this.children.bringToTop(this.held);
+
+    }
+
+    // Release / drop
     if (this.held) {
       if (handState.pinching) {
         this.releaseGrace = 0;
@@ -277,22 +459,72 @@ class MainScene extends Phaser.Scene {
         );
 
         if (overCauldron) {
-          this.pourText.setText("✨ poured potion ingredient!");
-          this.time.delayedCall(800, () => this.pourText.setText(""));
-          this.playCauldronAnim();
-        }
+          // Snap into position above cauldron
+          this.held.x = this.cauldron.x;
+          this.held.y = this.cauldron.y - 120;
 
-        // Drop bottle back
-        this.held.x = this.bottleHomeX;
-        this.held.y = this.bottleHomeY;
+          this.cauldron.setDepth(200);
+          this.held.setDepth(190);
+          this.playPotionSequence(this.held);
+          // Track poured potion
+          this.potionHistory.push(this.held.color);
+
+          // Evaluate combos SEE IF YOU NEED TO RESET HISTORY!!!!!!
+          for (const combo of this.COMBOS) {
+            if (combo.match(this.potionHistory)) {
+              this.setActiveFilter(combo.apply);
+              break;
+            }
+          }
+
+        } else {
+          // Return home
+          this.held.x = this.held.homeX;
+          this.held.y = this.held.homeY;
+        }
 
         this.held = null;
         this.releaseGrace = 0;
       }
     }
+  // Inside update() where you handle the face filter:
+  if (this.activeFilter && faceState.hasFace && faceState.landmarks) {
+      const filterData = this.FILTERS[this.activeFilter];
+      const sprite = this.filterSprites[this.activeFilter];
+      const L = faceState.landmarks;
+
+      // 1. Get the video element's position and size on screen
+      const videoEl = document.getElementById("cam");
+      const rect = videoEl.getBoundingClientRect();
+
+      // 2. Map MediaPipe (0-1) to the VIDEO'S pixels
+      // We use (1 - x) because your video is mirrored via CSS scaleX(-1)
+      const vLx = (1 - L[33].x) * rect.width;
+      const vLy = L[33].y * rect.height;
+      const vRx = (1 - L[263].x) * rect.width;
+      const vRy = L[263].y * rect.height;
+
+      // 3. Convert those video pixels to PHASER canvas pixels
+      // This aligns the sprite exactly over the PiP window
+      const spriteX = rect.left + (vLx + vRx) / 2;
+      const spriteY = rect.top + (vLy + vRy) / 2;
+
+      sprite.setPosition(spriteX, spriteY);
+
+      // Scaling: Adjust scale based on the small video box width
+      const dx = vRx - vLx;
+      const dy = vRy - vLy;
+      const eyeDist = Math.hypot(dx, dy);
+      
+      // Rotation Fix: Subtract Math.PI (180 degrees) if it's upside down
+      const angle = Math.atan2(dy, dx) - Math.PI; 
+
+      sprite.setScale((eyeDist * filterData.scaleMultiplier) / sprite.width);
+      sprite.setRotation(angle);
+      sprite.setVisible(true);
+  }
   }
 }
-
 
 const config = {
   type: Phaser.AUTO,
