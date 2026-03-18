@@ -459,7 +459,7 @@ class MainScene extends Phaser.Scene {
       } else {
         this.releaseGrace += 1;
       }
-
+      
       if (this.releaseGrace >= 3) {
         const overCauldron = Phaser.Geom.Rectangle.Contains(
           this.cauldron.getBounds(),
