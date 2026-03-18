@@ -185,6 +185,20 @@ class MainScene extends Phaser.Scene {
       for (const s of states) {
         this.load.image(`${c}_${s}`, asset(`../assets/potions/${c}_${s}.png`));
       }
+      this.load.image(`cauldron${i}`, asset(`../assets/cauldron${i}.png`));
+    }
+
+    const colors = ["cyan", "purple", "pink", "yellow", "blue", "green", "red"];
+    const states = [
+      "standing",
+      "tip1", "tip2", "tip3",
+      "spill1", "spill2", "spill3", "spill4",
+    ];
+
+    for (const c of colors) {
+      for (const s of states) {
+        this.load.image(`${c}_${s}`, asset(`../assets/potions/${c}_${s}.png`));
+      }
     }
   }
 
@@ -206,6 +220,49 @@ class MainScene extends Phaser.Scene {
 
     this.cauldron.isAnimating = false;
 
+    // Shelf slots tuned for your background
+    this.SHELF_SLOTS = [
+      // top shelf (4)
+      [0.2, 0.24, 0.73],
+      [0.4, 0.285, 1.1],
+      [0.6, 0.26, 1],
+      [0.8, 0.25, 0.9],
+
+      // middle shelf (3)
+      [0.3, 0.345, 0.85],
+      [0.5, 0.375, 1.2],
+      [0.7, 0.355, 0.9],
+    ];
+
+    const colors = ["cyan", "purple", "pink", "blue", "green", "yellow", "red"];
+    const TARGET_H = 180; // tweak this to make potions bigger/smaller overall
+
+    this.potions = [];
+
+    colors.forEach((color, i) => {
+      const [xN, yN, scaleMul] = this.SHELF_SLOTS[i];
+
+      const potion = this.add.image(xN * W, yN * H, `${color}_standing`);
+
+      potion.color = color;
+
+      // scale by target height + shelf multiplier
+      potion.setScale((TARGET_H / potion.height) * scaleMul);
+
+      // anchor to bottom so it sits on the plank
+      potion.setOrigin(0.5, 1);
+
+      // home for returning
+      potion.homeX = potion.x;
+      potion.homeY = potion.y;
+
+      potion.homeDepth = 5;
+      potion.setDepth(potion.homeDepth);
+
+      potion.isAnimating = false;
+
+      this.potions.push(potion);
+    });
     // Shelf slots tuned for your background
     this.SHELF_SLOTS = [
       // top shelf (4)
@@ -295,7 +352,15 @@ class MainScene extends Phaser.Scene {
     //   color: "#f5e9ff",
     //   fontSize: "16px",
     // });
+    // this.statusText = this.add.text(16, 14, "Loading hand tracking...", {
+    //   color: "#f5e9ff",
+    //   fontSize: "16px",
+    // });
 
+    // this.pourText = this.add.text(16, 40, "", {
+    //   color: "#ffd6ea",
+    //   fontSize: "16px",
+    // });
     // this.pourText = this.add.text(16, 40, "", {
     //   color: "#ffd6ea",
     //   fontSize: "16px",
@@ -385,7 +450,59 @@ class MainScene extends Phaser.Scene {
     step();
   }
 
+  playPotionSequence(potion) {
+    if (!potion || potion.isAnimating) return;
+
+    potion.isAnimating = true;
+
+    const frames = [
+      "standing",
+      "tip1", "tip2", "tip3",
+      "spill1", "spill2", "spill3", "spill4",
+    ];
+
+    let index = 0;
+
+    // cauldron in front while spilling (we keep potion behind it)
+    this.cauldron.setDepth(50);
+    potion.setDepth(40);
+
+    const step = () => {
+      potion.setTexture(`${potion.color}_${frames[index]}`);
+      index += 1;
+
+      if (index < frames.length) {
+        this.time.delayedCall(150, step);
+      } else {
+        this.time.delayedCall(200, () => {
+          potion.setTexture(`${potion.color}_standing`);
+          potion.x = potion.homeX;
+          potion.y = potion.homeY;
+
+          potion.setDepth(potion.homeDepth);
+          this.cauldron.setDepth(0);
+
+
+          potion.isAnimating = false;
+
+          this.playCauldronAnim();
+        });
+      }
+    };
+
+    step();
+  }
+
   update() {
+    // // Status
+    // if (!handState.ready) {
+    //   this.statusText.setText("Loading hand tracking...");
+    //   return;
+    // }
+    // if (!handState.hasHand) {
+    //   this.statusText.setText("Show one hand to the camera");
+    //   return;
+    // }
     // // Status
     // if (!handState.ready) {
     //   this.statusText.setText("Loading hand tracking...");
@@ -399,6 +516,9 @@ class MainScene extends Phaser.Scene {
     // this.statusText.setText(handState.pinching ? "PINCH" : "Pinch to grab");
     // this.cursor.setFillStyle(handState.pinching ? 0xff8ad8 : 0xffffff);
     // this.cursorRing.setStrokeStyle(2, handState.pinching ? 0xff8ad8 : 0xffffff);
+    // this.statusText.setText(handState.pinching ? "PINCH" : "Pinch to grab");
+    // this.cursor.setFillStyle(handState.pinching ? 0xff8ad8 : 0xffffff);
+    // this.cursorRing.setStrokeStyle(2, handState.pinching ? 0xff8ad8 : 0xffffff);
 
     // Smooth cursor visuals
     this.cursor.x += (handState.cursorX - this.cursor.x) * 0.4;
@@ -406,6 +526,7 @@ class MainScene extends Phaser.Scene {
     this.cursorRing.x += (handState.cursorX - this.cursorRing.x) * 0.2;
     this.cursorRing.y += (handState.cursorY - this.cursorRing.y) * 0.2;
 
+    // If holding potion, follow cursor
     // If holding potion, follow cursor
     if (this.held) {
       this.held.x = handState.cursorX;
@@ -441,8 +562,16 @@ class MainScene extends Phaser.Scene {
       // Also force display-list ordering (beats “render order” ties)
       this.children.bringToTop(this.held);
 
+      this.held.setDepth(100);
+        // Put it above ALL potions while dragging
+      this.held.setDepth(500);
+
+      // Also force display-list ordering (beats “render order” ties)
+      this.children.bringToTop(this.held);
+
     }
 
+    // Release / drop
     // Release / drop
     if (this.held) {
       if (handState.pinching) {
