@@ -1,6 +1,7 @@
 console.log("main.js loaded");
 
-import { FilesetResolver, HandLandmarker }
+
+import { FilesetResolver, HandLandmarker, FaceLandmarker }
 from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18";
 
 // Portrait game (matches your background exactly: 2:3)
