@@ -1,9 +1,9 @@
 # Potion Master (Work in Progress)
 
 An interactive hand-tracking potion game built with MediaPipe.
-
-#### ⚠️ This project is currently under active development.
 https://lynnmolga.github.io/Potion-Master/
+#### ⚠️ This project is currently under active development.
+
 -----------
 ### Concept
 
